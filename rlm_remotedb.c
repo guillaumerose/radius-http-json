@@ -27,25 +27,32 @@ RCSID("$Id$")
 #include <freeradius-devel/radiusd.h>
 #include <freeradius-devel/modules.h>
 
+#include <json/json.h>
+#include <curl/curl.h>
+
 typedef struct rlm_remotedb_t {
 	char	*ip;
 	int	port;
+	char	*base;
 } rlm_remotedb_t;
 
-
 static const CONF_PARSER module_config[] = {
-  { "port", PW_TYPE_INTEGER,    offsetof(rlm_remotedb_t,port), NULL,   "27017" },
-  { "ip",  PW_TYPE_STRING_PTR, offsetof(rlm_remotedb_t,ip), NULL,  "127.0.0.1"},
-  // 
-  // { "base",  PW_TYPE_STRING_PTR, offsetof(rlm_remotedb_t,base), NULL,  ""},
-  // { "search_field",  PW_TYPE_STRING_PTR, offsetof(rlm_remotedb_t,search_field), NULL,  ""},
-  // { "username_field",  PW_TYPE_STRING_PTR, offsetof(rlm_remotedb_t,username_field), NULL,  ""},
-  // { "password_field",  PW_TYPE_STRING_PTR, offsetof(rlm_remotedb_t,password_field), NULL,  ""},
-  // { "mac_field",  PW_TYPE_STRING_PTR, offsetof(rlm_remotedb_t,mac_field), NULL,  ""},
-  // { "enable_field",  PW_TYPE_STRING_PTR, offsetof(rlm_remotedb_t,enable_field), NULL,  ""},
+  { "port", PW_TYPE_INTEGER,    offsetof(rlm_remotedb_t, port), NULL,   "80" },
+  { "ip",  PW_TYPE_STRING_PTR, offsetof(rlm_remotedb_t, ip), NULL,  "127.0.0.1"},
+  { "base",  PW_TYPE_STRING_PTR, offsetof(rlm_remotedb_t, base), NULL,  ""},
   
-  { NULL, -1, 0, NULL, NULL }		/* end the list */
+  { NULL, -1, 0, NULL, NULL }
 };
+
+static int remotedb_disable = 0;
+
+static int
+get_timestamp()
+{
+	time_t timestamp;
+	time(&timestamp);
+	return (int) timestamp;
+}
 
 static int 
 remotedb_instantiate(CONF_SECTION *conf, void **instance)
@@ -68,60 +75,110 @@ remotedb_instantiate(CONF_SECTION *conf, void **instance)
 	return 0;
 }
 
-// static void 
-// format_mac(char *in, char *out) 
-// {
-//      int i;
-//      for (i = 0; i < 6; i++) {
-//              out[3 * i] = in[2 * i];
-//              out[3 * i + 1] = in[2 * i + 1];
-//              out[3 * i + 2] = ':';
-//      }
-//      out[17] = '\0';
-// }
+static int
+remotedb_answer_builder(REQUEST *request, const char *password, const char *vlan)
+{
+        VALUE_PAIR *pair;
+
+        radlog(L_DBG, "Building answer : password = %s, vlan = %s\n", password, vlan);
+
+        pair = pairmake("NT-Password", password, T_OP_SET);	
+        pairmove(&request->config_items, &pair);
+        pairfree(&pair);
+
+        pair = pairmake("Tunnel-Private-Group-Id", vlan, T_OP_SET);
+        pairadd(&request->reply->vps, pair);
+        
+        pair = pairmake("Tunnel-Medium-Type", "6", T_OP_SET);
+        pairadd(&request->reply->vps, pair);
+        
+        pair = pairmake("Tunnel-Type", "13", T_OP_SET);
+        pairadd(&request->reply->vps, pair);
+        
+        return RLM_MODULE_OK;
+}
+
+static size_t 
+remotedb_curl( void *ptr, size_t size, size_t nmemb, void *userdata)
+{
+        REQUEST *request = (REQUEST *) userdata;
+		
+	json_object * jobj = json_tokener_parse(ptr);
+	
+	if ((int) jobj < 0) {
+                printf("Invalid json\n");
+		return nmemb * size;
+	}
+
+	struct json_object *jvlan;
+	struct json_object *jpassword;
+	
+	if (json_object_get_type(jobj) != json_type_object) {
+		printf("Wrong type in field\n");
+		return 0;
+	}
+	
+	if ((jvlan = json_object_object_get(jobj, "vlan")) == NULL) {
+		printf("vlan field needed\n");
+		return 0;
+	}
+
+	if ((jpassword = json_object_object_get(jobj, "password")) == NULL) {
+		printf("password field needed\n");
+		return 0;
+	}
+
+        remotedb_answer_builder(request, json_object_get_string(jpassword), json_object_get_string(jvlan));
+        
+	json_object_put(jobj);
+	
+	return nmemb * size;
+}
 
 static int 
 remotedb_authorize(void *instance, REQUEST *request)
 {
+        if (remotedb_disable && get_timestamp() - remotedb_disable <= 30)
+                return RLM_MODULE_FAIL;
+        
         if (request->username == NULL)
                 return RLM_MODULE_NOOP;
 	
         rlm_remotedb_t *data = (rlm_remotedb_t *) instance;
-	
-        char password[1024] = "toto";
+
         char mac[1024] = "";
+	char uri[1024] = "";
 
-        // char mac_temp[1024] = "";
         radius_xlat(mac, 1024, "%{Calling-Station-Id}", request, NULL);
-        // format_mac(mac_temp, mac);
-
-        printf("\nMac addr -> \"%s\"\n", mac);
-        printf("\nAutorisation request by username -> \"%s\"\n", request->username->vp_strvalue);
-        printf("Password found in MongoDB -> \"%s\"\n\n", password);
-
-        VALUE_PAIR *vp;
-
-        /* quiet the compiler */
-        instance = instance;
-        request = request;
-
-        // Unsecure : Cleartext-Password
-        vp = pairmake("NT-Password", "fbbf55d0ef0e34d39593f55c5f2ca5f2", T_OP_SET);
-        if (!vp) 
-                return RLM_MODULE_FAIL;
+                
+        radlog(L_DBG, "Search with following options : mac address = %s, username = %s\n", mac, request->username->vp_strvalue);
+        
+	sprintf(uri, "http://%s:%d%s/authenticate?login=%s&mac=%s", data->ip, data->port, data->base, request->username->vp_strvalue, mac);
+        
+        radlog(L_DBG, "Calling %s\n", uri);
 	
-        pairmove(&request->config_items, &vp);
-        pairfree(&vp);
-        
-        VALUE_PAIR *timeout;
-        
-        timeout = pairmake("Tunnel-Private-Group-Id", "41", T_OP_SET);
-        pairadd(&request->reply->vps, timeout);
-        timeout = pairmake("Tunnel-Medium-Type", "6", T_OP_SET);
-        pairadd(&request->reply->vps, timeout);
-        timeout = pairmake("Tunnel-Type", "13", T_OP_SET);
-        pairadd(&request->reply->vps, timeout);
-        
+	CURL *curl;
+	CURLcode res = CURLE_FAILED_INIT;
+	
+	curl = curl_easy_init();
+	if(curl) {
+		curl_easy_setopt(curl, CURLOPT_URL, uri);
+		curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, remotedb_curl);
+		curl_easy_setopt(curl, CURLOPT_WRITEDATA, request);
+		
+		curl_easy_setopt(curl, CURLOPT_TIMEOUT, 1);
+		curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, 1);
+		
+		res = curl_easy_perform(curl);
+		curl_easy_cleanup(curl);
+	}
+
+	if (res != CURLE_OK) {
+	        remotedb_disable = get_timestamp();
+                radlog(L_ERR, "Failed to call %s, retry in few seconds\n", uri);
+		return RLM_MODULE_FAIL;
+	}
+
         return RLM_MODULE_OK;
 }
 
@@ -139,7 +196,7 @@ module_t rlm_remotedb = {
 	remotedb_instantiate,		/* instantiation */
 	remotedb_detach,		/* detach */
 	{
-		remotedb_authorize,     /* authentication */
+		NULL,                   /* authentication */
 		remotedb_authorize,	/* authorization */
 		NULL,			/* preaccounting */
 		NULL,			/* accounting */
@@ -149,5 +206,3 @@ module_t rlm_remotedb = {
 		NULL			/* post-auth */
 	},
 };
-
-
