@@ -1,0 +1,62 @@
+h1. radius-http-json
+
+h2. How it works ?
+
+An experiment with FreeRADIUS. For each request, radius makes a HTTP GET on a webserver which answers a bit of json.
+With this backend, you are free in your choice of database. You don't have to change bind code, just write a little webserver.
+
+bc.. require 'rubygems'
+require 'sinatra'
+
+get '/base/authenticate' do
+  content_type "application/json"
+  
+  # mac address = params["mac"]
+  # login = params["login"]
+
+  '{"password" : "some NTLM password", "vlan" : "a vlan number"}'
+end
+
+p. and in configuration file,
+
+bc.. remotedb {
+	port = 8080
+	ip = 192.168.1.2
+	base = "/base"
+}
+
+p. Easy? When I plug my network cable, radiusd asks my webserver 
+
+bc. GET /base/authenticate?mac=[mac]&login=[login]
+
+Sinatra answers 
+
+bc. {"password" : "some NTLM password", "vlan" : "a vlan number"}
+
+h2. Install
+
+* Copy rlm_remotedb into src/modules/
+* Add "rlm_remotedb" in src/modules/stable
+* ./configure
+* make
+* make install
+* Create a file named remotdb in raddb/modules/ and insert this :
+
+bc.. remotedb {
+	port = 8080
+	ip = 192.168.1.71
+	base = "/radius"
+}
+
+p. 
+
+* Ensure you have this in eap.conf (if you use inner-tunnel)
+
+bc.. copy_request_to_tunnel = yes
+use_tunneled_reply = yes
+
+p. 
+
+* Add in your site configuration in authorize sub-section "remotedb"
+* Run radiusd
+
