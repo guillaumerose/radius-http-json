@@ -26,6 +26,7 @@ RCSID("$Id$")
 
 #include <freeradius-devel/radiusd.h>
 #include <freeradius-devel/modules.h>
+#include <freeradius-devel/sysutmp.h>
 
 #include <json/json.h>
 #include <curl/curl.h>
@@ -183,6 +184,50 @@ remotedb_authorize(void *instance, REQUEST *request)
 }
 
 static int 
+remotedb_accounting(void *instance, REQUEST *request)
+{
+	VALUE_PAIR	*vp;
+	time_t		t;
+	char buf[80];
+	struct tm  *ts;
+	
+	if (request->packet->src_ipaddr.af != AF_INET) {
+		RDEBUG2("IPv6 is not supported!");
+		return RLM_MODULE_NOOP;
+	}
+
+	if ((vp = pairfind(request->packet->vps, PW_ACCT_STATUS_TYPE))==NULL) {
+		radlog(L_ERR, "rlm_remotedb: no Accounting-Status-Type attribute in request.");
+		return RLM_MODULE_NOOP;
+	}
+	
+	printf("STATUS = %d\n", vp->vp_integer);
+
+
+	if (pairfind(request->packet->vps, PW_USER_NAME) == NULL)
+		return RLM_MODULE_NOOP;
+
+	t = request->timestamp;
+
+        ts = localtime(&t);
+        strftime(buf, sizeof(buf), "%a %Y-%m-%d %H:%M:%S %Z", ts);
+
+	printf("TIMESTAMP = %s\n", buf);
+        
+	for (vp = request->packet->vps; vp; vp = vp->next) {
+		switch (vp->attribute) {
+			case PW_NAS_PORT_ID_STRING:
+		        case PW_ACCT_SESSION_ID:
+			case PW_USER_NAME:
+				printf("DATA = %s\n", (char *)vp->vp_strvalue);
+				break;
+		}
+	}
+
+	return RLM_MODULE_OK;
+}
+
+static int 
 remotedb_detach(void *instance)
 {
 	free(instance);
@@ -199,7 +244,7 @@ module_t rlm_remotedb = {
 		NULL,                   /* authentication */
 		remotedb_authorize,	/* authorization */
 		NULL,			/* preaccounting */
-		NULL,			/* accounting */
+		remotedb_accounting,	/* accounting */
 		NULL,			/* checksimul */
 		NULL,			/* pre-proxy */
 		NULL,			/* post-proxy */
