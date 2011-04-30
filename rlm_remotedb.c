@@ -116,17 +116,17 @@ remotedb_curl( void *ptr, size_t size, size_t nmemb, void *userdata)
 	
 	if (json_object_get_type(jobj) != json_type_object) {
 		printf("Wrong type in field\n");
-		return 0;
+		return nmemb * size;
 	}
 	
 	if ((jvlan = json_object_object_get(jobj, "vlan")) == NULL) {
 		printf("vlan field needed\n");
-		return 0;
+		return nmemb * size;
 	}
 
 	if ((jpassword = json_object_object_get(jobj, "password")) == NULL) {
 		printf("password field needed\n");
-		return 0;
+		return nmemb * size;
 	}
 
         remotedb_answer_builder(request, json_object_get_string(jpassword), json_object_get_string(jvlan));
