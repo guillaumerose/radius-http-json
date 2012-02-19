@@ -35,7 +35,8 @@ bc. {"password" : "some NTLM password", "vlan" : "a vlan number"}
 
 h2. Install
 
-* Copy rlm_remotedb into src/modules/
+* Install the JSON library. apt-get install libjson0 on ubuntu or manually install http://oss.metaparadigm.com/json-c/
+* Copy the directory rlm_remotedb into src/modules/
 * Add "rlm_remotedb" in src/modules/stable
 * ./configure
 * make
