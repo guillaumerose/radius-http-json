@@ -107,7 +107,7 @@ remotedb_curl( void *ptr, size_t size, size_t nmemb, void *userdata)
 	json_object * jobj = json_tokener_parse(ptr);
 	
 	if ((int) jobj < 0) {
-                printf("Invalid json\n");
+                radlog(L_ERR, "Invalid json\n");
 		return nmemb * size;
 	}
 
@@ -115,17 +115,17 @@ remotedb_curl( void *ptr, size_t size, size_t nmemb, void *userdata)
 	struct json_object *jpassword;
 	
 	if (json_object_get_type(jobj) != json_type_object) {
-		printf("Wrong type in field\n");
+		radlog(L_ERR, "Wrong type in field\n");
 		return nmemb * size;
 	}
 	
 	if ((jvlan = json_object_object_get(jobj, "vlan")) == NULL) {
-		printf("vlan field needed\n");
+		radlog(L_ERR, "vlan field needed\n");
 		return nmemb * size;
 	}
 
 	if ((jpassword = json_object_object_get(jobj, "password")) == NULL) {
-		printf("password field needed\n");
+		radlog(L_ERR, "password field needed\n");
 		return nmemb * size;
 	}
 
@@ -176,7 +176,7 @@ remotedb_authorize(void *instance, REQUEST *request)
 
 	if (res != CURLE_OK) {
 	        remotedb_disable = get_timestamp();
-                radlog(L_ERR, "Failed to call %s, retry in few seconds\n", uri);
+		radlog(L_ERR, "Failed to call %s, retry in few seconds with CURLcode %d\n", uri, res);
 		return RLM_MODULE_FAIL;
 	}
 
@@ -193,6 +193,7 @@ remotedb_accounting(void *instance, REQUEST *request)
 	
 	if (request->packet->src_ipaddr.af != AF_INET) {
 		RDEBUG2("IPv6 is not supported!");
+		radlog(L_ERR, "IPv6 is not supported!");
 		return RLM_MODULE_NOOP;
 	}
 
@@ -212,14 +213,14 @@ remotedb_accounting(void *instance, REQUEST *request)
         ts = localtime(&t);
         strftime(buf, sizeof(buf), "%a %Y-%m-%d %H:%M:%S %Z", ts);
 
-	printf("TIMESTAMP = %s\n", buf);
+	radlog(L_DBG, "TIMESTAMP = %s\n", buf);
         
 	for (vp = request->packet->vps; vp; vp = vp->next) {
 		switch (vp->attribute) {
 			case PW_NAS_PORT_ID_STRING:
 		        case PW_ACCT_SESSION_ID:
 			case PW_USER_NAME:
-				printf("DATA = %s\n", (char *)vp->vp_strvalue);
+				radlog(L_DBG, "DATA = %s\n", (char *)vp->vp_strvalue);
 				break;
 		}
 	}
