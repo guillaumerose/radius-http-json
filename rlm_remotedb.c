@@ -1,7 +1,7 @@
 /*
  * rlm_remotedb.c
  *
- * Version:	$Id$
+ * Version:    $Id$
  *
  *   This program is free software; you can redistribute it and/or modify
  *   it under the terms of the GNU General Public License as published by
@@ -32,9 +32,9 @@ RCSID("$Id$")
 #include <curl/curl.h>
 
 typedef struct rlm_remotedb_t {
-	char	*ip;
-	int	port;
-	char	*base;
+    char    *ip;
+    int    port;
+    char    *base;
 } rlm_remotedb_t;
 
 static const CONF_PARSER module_config[] = {
@@ -50,9 +50,9 @@ static int remotedb_disable = 0;
 static int
 get_timestamp()
 {
-	time_t timestamp;
-	time(&timestamp);
-	return (int) timestamp;
+    time_t timestamp;
+    time(&timestamp);
+    return (int) timestamp;
 }
 
 static int
@@ -73,7 +73,7 @@ remotedb_instantiate(CONF_SECTION *conf, void **instance)
 
     *instance = data;
 
-	return 0;
+    return 0;
 }
 
 static int
@@ -104,36 +104,39 @@ remotedb_curl( void *ptr, size_t size, size_t nmemb, void *userdata)
 {
     REQUEST *request = (REQUEST *) userdata;
 
-	json_object * jobj = json_tokener_parse(ptr);
+    json_object * jobj = json_tokener_parse(ptr);
 
-	if ((int) jobj < 0) {
-                radlog(L_ERR, "Invalid json\n");
-		return nmemb * size;
-	}
+    if ((int) jobj < 0) {
+        radlog(L_ERR, "Invalid json\n");
+        json_object_put(jobj);
+        return nmemb * size;
+    }
 
-	struct json_object *jvlan;
-	struct json_object *jpassword;
+    struct json_object *jvlan;
+    struct json_object *jpassword;
 
-	if (json_object_get_type(jobj) != json_type_object) {
-		radlog(L_ERR, "Wrong type in field\n");
-		return nmemb * size;
-	}
+    if (json_object_get_type(jobj) != json_type_object) {
+        radlog(L_ERR, "Wrong type in field\n");
+        json_object_put(jobj);
+        return nmemb * size;
+    }
 
-	if ((jvlan = json_object_object_get(jobj, "vlan")) == NULL) {
-		radlog(L_ERR, "vlan field needed\n");
-		return nmemb * size;
-	}
+    if ((jvlan = json_object_object_get(jobj, "vlan")) == NULL) {
+        radlog(L_ERR, "vlan field needed\n");
+        json_object_put(jobj);
+        return nmemb * size;
+    }
 
-	if ((jpassword = json_object_object_get(jobj, "password")) == NULL) {
-		radlog(L_ERR, "password field needed\n");
-		return nmemb * size;
-	}
+    if ((jpassword = json_object_object_get(jobj, "password")) == NULL) {
+        radlog(L_ERR, "password field needed\n");
+        json_object_put(jobj);
+        return nmemb * size;
+    }
 
     remotedb_answer_builder(request, json_object_get_string(jpassword), json_object_get_string(jvlan));
 
-	json_object_put(jobj);
-
-	return nmemb * size;
+    json_object_put(jobj);
+    return nmemb * size;
 }
 
 static int
@@ -148,38 +151,38 @@ remotedb_authorize(void *instance, REQUEST *request)
     rlm_remotedb_t *data = (rlm_remotedb_t *) instance;
 
     char mac[1024] = "";
-	char uri[1024] = "";
+    char uri[1024] = "";
 
     radius_xlat(mac, 1024, "%{Calling-Station-Id}", request, NULL);
 
     radlog(L_DBG, "Search with following options : mac address = %s, username = %s\n", mac, request->username->vp_strvalue);
 
-	snprintf(uri, 1024, "http://%s:%d%s/authenticate?login=%s&mac=%s", data->ip, data->port, data->base, request->username->vp_strvalue, mac);
+    snprintf(uri, 1024, "http://%s:%d%s/authenticate?login=%s&mac=%s", data->ip, data->port, data->base, request->username->vp_strvalue, mac);
 
     radlog(L_DBG, "Calling %s\n", uri);
 
-	CURL *curl;
-	CURLcode res = CURLE_FAILED_INIT;
+    CURL *curl;
+    CURLcode res = CURLE_FAILED_INIT;
 
-	curl = curl_easy_init();
+    curl = curl_easy_init();
 
-	if(curl) {
-		curl_easy_setopt(curl, CURLOPT_URL, uri);
-		curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, remotedb_curl);
-		curl_easy_setopt(curl, CURLOPT_WRITEDATA, request);
+    if(curl) {
+        curl_easy_setopt(curl, CURLOPT_URL, uri);
+        curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, remotedb_curl);
+        curl_easy_setopt(curl, CURLOPT_WRITEDATA, request);
 
-		curl_easy_setopt(curl, CURLOPT_TIMEOUT, 1);
-		curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, 1);
+        curl_easy_setopt(curl, CURLOPT_TIMEOUT, 1);
+        curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, 1);
 
-		res = curl_easy_perform(curl);
-		curl_easy_cleanup(curl);
-	}
+        res = curl_easy_perform(curl);
+        curl_easy_cleanup(curl);
+    }
 
-	if (res != CURLE_OK) {
-	    remotedb_disable = get_timestamp();
-		radlog(L_ERR, "Failed to call %s, retry in few seconds with CURLcode %d\n", uri, res);
-		return RLM_MODULE_FAIL;
-	}
+    if (res != CURLE_OK) {
+        remotedb_disable = get_timestamp();
+        radlog(L_ERR, "Failed to call %s, retry in few seconds with CURLcode %d\n", uri, res);
+        return RLM_MODULE_FAIL;
+    }
 
     return RLM_MODULE_OK;
 }
@@ -187,24 +190,24 @@ remotedb_authorize(void *instance, REQUEST *request)
 static int
 remotedb_detach(void *instance)
 {
-	free(instance);
-	return 0;
+    free(instance);
+    return 0;
 }
 
 module_t rlm_remotedb = {
-	RLM_MODULE_INIT,
-	"remotedb",
-	RLM_TYPE_THREAD_SAFE,		/* type */
-	remotedb_instantiate,		/* instantiation */
-	remotedb_detach,		/* detach */
-	{
-		NULL,           /* authentication */
-		remotedb_authorize,	/* authorization */
-		NULL,			/* preaccounting */
-		NULL,	        /* accounting */
-		NULL,			/* checksimul */
-		NULL,			/* pre-proxy */
-		NULL,			/* post-proxy */
-		NULL			/* post-auth */
-	},
+    RLM_MODULE_INIT,
+    "remotedb",
+    RLM_TYPE_THREAD_SAFE,        /* type */
+    remotedb_instantiate,        /* instantiation */
+    remotedb_detach,        /* detach */
+    {
+        NULL,           /* authentication */
+        remotedb_authorize,    /* authorization */
+        NULL,            /* preaccounting */
+        NULL,            /* accounting */
+        NULL,            /* checksimul */
+        NULL,            /* pre-proxy */
+        NULL,            /* post-proxy */
+        NULL            /* post-auth */
+    },
 };
