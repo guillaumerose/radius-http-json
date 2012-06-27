@@ -154,7 +154,7 @@ remotedb_authorize(void *instance, REQUEST *request)
 
     radlog(L_DBG, "Search with following options : mac address = %s, username = %s\n", mac, request->username->vp_strvalue);
 
-	sprintf(uri, "http://%s:%d%s/authenticate?login=%s&mac=%s", data->ip, data->port, data->base, request->username->vp_strvalue, mac);
+	snprintf(uri, 1024, "http://%s:%d%s/authenticate?login=%s&mac=%s", data->ip, data->port, data->base, request->username->vp_strvalue, mac);
 
     radlog(L_DBG, "Calling %s\n", uri);
 
