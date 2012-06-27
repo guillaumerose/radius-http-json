@@ -41,7 +41,7 @@ static const CONF_PARSER module_config[] = {
   { "port", PW_TYPE_INTEGER,    offsetof(rlm_remotedb_t, port), NULL,   "80" },
   { "ip",  PW_TYPE_STRING_PTR, offsetof(rlm_remotedb_t, ip), NULL,  "127.0.0.1"},
   { "base",  PW_TYPE_STRING_PTR, offsetof(rlm_remotedb_t, base), NULL,  ""},
-  
+
   { NULL, -1, 0, NULL, NULL }
 };
 
@@ -55,23 +55,23 @@ get_timestamp()
 	return (int) timestamp;
 }
 
-static int 
+static int
 remotedb_instantiate(CONF_SECTION *conf, void **instance)
 {
-        rlm_remotedb_t *data;
-        
-        data = rad_malloc(sizeof(*data));
-        if (!data) {
-             return -1;
-        }
-        memset(data, 0, sizeof(*data));
-        
-        if (cf_section_parse(conf, data, module_config) < 0) {
-             free(data);
-             return -1;
-        }
-        
-        *instance = data;
+    rlm_remotedb_t *data;
+
+    data = rad_malloc(sizeof(*data));
+    if (!data) {
+         return -1;
+    }
+    memset(data, 0, sizeof(*data));
+
+    if (cf_section_parse(conf, data, module_config) < 0) {
+         free(data);
+         return -1;
+    }
+
+    *instance = data;
 
 	return 0;
 }
@@ -79,33 +79,33 @@ remotedb_instantiate(CONF_SECTION *conf, void **instance)
 static int
 remotedb_answer_builder(REQUEST *request, const char *password, const char *vlan)
 {
-        VALUE_PAIR *pair;
+    VALUE_PAIR *pair;
 
-        radlog(L_DBG, "Building answer : password = %s, vlan = %s\n", password, vlan);
+    radlog(L_DBG, "Building answer : password = %s, vlan = %s\n", password, vlan);
 
-        pair = pairmake("NT-Password", password, T_OP_SET);	
-        pairmove(&request->config_items, &pair);
-        pairfree(&pair);
+    pair = pairmake("NT-Password", password, T_OP_SET);
+    pairmove(&request->config_items, &pair);
+    pairfree(&pair);
 
-        pair = pairmake("Tunnel-Private-Group-Id", vlan, T_OP_SET);
-        pairadd(&request->reply->vps, pair);
-        
-        pair = pairmake("Tunnel-Medium-Type", "6", T_OP_SET);
-        pairadd(&request->reply->vps, pair);
-        
-        pair = pairmake("Tunnel-Type", "13", T_OP_SET);
-        pairadd(&request->reply->vps, pair);
-        
-        return RLM_MODULE_OK;
+    pair = pairmake("Tunnel-Private-Group-Id", vlan, T_OP_SET);
+    pairadd(&request->reply->vps, pair);
+
+    pair = pairmake("Tunnel-Medium-Type", "6", T_OP_SET);
+    pairadd(&request->reply->vps, pair);
+
+    pair = pairmake("Tunnel-Type", "13", T_OP_SET);
+    pairadd(&request->reply->vps, pair);
+
+    return RLM_MODULE_OK;
 }
 
-static size_t 
+static size_t
 remotedb_curl( void *ptr, size_t size, size_t nmemb, void *userdata)
 {
-        REQUEST *request = (REQUEST *) userdata;
-		
+    REQUEST *request = (REQUEST *) userdata;
+
 	json_object * jobj = json_tokener_parse(ptr);
-	
+
 	if ((int) jobj < 0) {
                 radlog(L_ERR, "Invalid json\n");
 		return nmemb * size;
@@ -113,12 +113,12 @@ remotedb_curl( void *ptr, size_t size, size_t nmemb, void *userdata)
 
 	struct json_object *jvlan;
 	struct json_object *jpassword;
-	
+
 	if (json_object_get_type(jobj) != json_type_object) {
 		radlog(L_ERR, "Wrong type in field\n");
 		return nmemb * size;
 	}
-	
+
 	if ((jvlan = json_object_object_get(jobj, "vlan")) == NULL) {
 		radlog(L_ERR, "vlan field needed\n");
 		return nmemb * size;
@@ -129,106 +129,62 @@ remotedb_curl( void *ptr, size_t size, size_t nmemb, void *userdata)
 		return nmemb * size;
 	}
 
-        remotedb_answer_builder(request, json_object_get_string(jpassword), json_object_get_string(jvlan));
-        
+    remotedb_answer_builder(request, json_object_get_string(jpassword), json_object_get_string(jvlan));
+
 	json_object_put(jobj);
-	
+
 	return nmemb * size;
 }
 
-static int 
+static int
 remotedb_authorize(void *instance, REQUEST *request)
 {
-        if (remotedb_disable && get_timestamp() - remotedb_disable <= 30)
-                return RLM_MODULE_FAIL;
-        
-        if (request->username == NULL)
-                return RLM_MODULE_NOOP;
-	
-        rlm_remotedb_t *data = (rlm_remotedb_t *) instance;
+    if (remotedb_disable && get_timestamp() - remotedb_disable <= 30)
+            return RLM_MODULE_FAIL;
 
-        char mac[1024] = "";
+    if (request->username == NULL)
+            return RLM_MODULE_NOOP;
+
+    rlm_remotedb_t *data = (rlm_remotedb_t *) instance;
+
+    char mac[1024] = "";
 	char uri[1024] = "";
 
-        radius_xlat(mac, 1024, "%{Calling-Station-Id}", request, NULL);
-                
-        radlog(L_DBG, "Search with following options : mac address = %s, username = %s\n", mac, request->username->vp_strvalue);
-        
+    radius_xlat(mac, 1024, "%{Calling-Station-Id}", request, NULL);
+
+    radlog(L_DBG, "Search with following options : mac address = %s, username = %s\n", mac, request->username->vp_strvalue);
+
 	sprintf(uri, "http://%s:%d%s/authenticate?login=%s&mac=%s", data->ip, data->port, data->base, request->username->vp_strvalue, mac);
-        
-        radlog(L_DBG, "Calling %s\n", uri);
-	
+
+    radlog(L_DBG, "Calling %s\n", uri);
+
 	CURL *curl;
 	CURLcode res = CURLE_FAILED_INIT;
-	
+
 	curl = curl_easy_init();
+
 	if(curl) {
 		curl_easy_setopt(curl, CURLOPT_URL, uri);
 		curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, remotedb_curl);
 		curl_easy_setopt(curl, CURLOPT_WRITEDATA, request);
-		
+
 		curl_easy_setopt(curl, CURLOPT_TIMEOUT, 1);
 		curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, 1);
-		
+
 		res = curl_easy_perform(curl);
 		curl_easy_cleanup(curl);
 	}
 
 	if (res != CURLE_OK) {
-	        remotedb_disable = get_timestamp();
+	    remotedb_disable = get_timestamp();
 		radlog(L_ERR, "Failed to call %s, retry in few seconds with CURLcode %d\n", uri, res);
 		return RLM_MODULE_FAIL;
 	}
 
-        return RLM_MODULE_OK;
+    return RLM_MODULE_OK;
 }
 
-static int 
-remotedb_accounting(void *instance, REQUEST *request)
-{
-	VALUE_PAIR	*vp;
-	time_t		t;
-	char buf[80];
-	struct tm  *ts;
-	
-	if (request->packet->src_ipaddr.af != AF_INET) {
-		RDEBUG2("IPv6 is not supported!");
-		radlog(L_ERR, "IPv6 is not supported!");
-		return RLM_MODULE_NOOP;
-	}
-
-	if ((vp = pairfind(request->packet->vps, PW_ACCT_STATUS_TYPE))==NULL) {
-		radlog(L_ERR, "rlm_remotedb: no Accounting-Status-Type attribute in request.");
-		return RLM_MODULE_NOOP;
-	}
-	
-	printf("STATUS = %d\n", vp->vp_integer);
-
-
-	if (pairfind(request->packet->vps, PW_USER_NAME) == NULL)
-		return RLM_MODULE_NOOP;
-
-	t = request->timestamp;
-
-        ts = localtime(&t);
-        strftime(buf, sizeof(buf), "%a %Y-%m-%d %H:%M:%S %Z", ts);
-
-	radlog(L_DBG, "TIMESTAMP = %s\n", buf);
-        
-	for (vp = request->packet->vps; vp; vp = vp->next) {
-		switch (vp->attribute) {
-			case PW_NAS_PORT_ID_STRING:
-		        case PW_ACCT_SESSION_ID:
-			case PW_USER_NAME:
-				radlog(L_DBG, "DATA = %s\n", (char *)vp->vp_strvalue);
-				break;
-		}
-	}
-
-	return RLM_MODULE_OK;
-}
-
-static int 
+static int
 remotedb_detach(void *instance)
 {
 	free(instance);
@@ -242,10 +198,10 @@ module_t rlm_remotedb = {
 	remotedb_instantiate,		/* instantiation */
 	remotedb_detach,		/* detach */
 	{
-		NULL,                   /* authentication */
+		NULL,           /* authentication */
 		remotedb_authorize,	/* authorization */
 		NULL,			/* preaccounting */
-		remotedb_accounting,	/* accounting */
+		NULL,	        /* accounting */
 		NULL,			/* checksimul */
 		NULL,			/* pre-proxy */
 		NULL,			/* post-proxy */
