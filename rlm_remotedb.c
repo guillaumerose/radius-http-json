@@ -45,16 +45,6 @@ static const CONF_PARSER module_config[] = {
   { NULL, -1, 0, NULL, NULL }
 };
 
-static int remotedb_disable = 0;
-
-static int
-get_timestamp()
-{
-    time_t timestamp;
-    time(&timestamp);
-    return (int) timestamp;
-}
-
 static int
 remotedb_instantiate(CONF_SECTION *conf, void **instance)
 {
@@ -142,9 +132,6 @@ remotedb_curl( void *ptr, size_t size, size_t nmemb, void *userdata)
 static int
 remotedb_authorize(void *instance, REQUEST *request)
 {
-    if (remotedb_disable && get_timestamp() - remotedb_disable <= 30)
-            return RLM_MODULE_FAIL;
-
     if (request->username == NULL)
             return RLM_MODULE_NOOP;
 
@@ -178,13 +165,15 @@ remotedb_authorize(void *instance, REQUEST *request)
         curl_easy_cleanup(curl);
     }
 
-    if (res != CURLE_OK) {
-        remotedb_disable = get_timestamp();
-        radlog(L_ERR, "Failed to call %s, retry in few seconds with CURLcode %d\n", uri, res);
-        return RLM_MODULE_FAIL;
+    if (res == CURLE_OK) {
+        return RLM_MODULE_OK;
     }
 
-    return RLM_MODULE_OK;
+    radlog(L_ERR, "Failed to call %s, retry in few seconds with CURLcode %d\n", uri, res);
+    if (res == CURLE_COULDNT_CONNECT || res == CURLE_OPERATION_TIMEDOUT) {
+        radlog(L_ERR, "Couldnt connect to the server or operation timeout");
+    }
+    return RLM_MODULE_FAIL;
 }
 
 static int
