@@ -150,7 +150,7 @@ remotedb_authorize(void *instance, REQUEST *request)
 
     curl = curl_easy_init();
 
-    if(curl) {
+    if (curl) {
         curl_easy_setopt(curl, CURLOPT_URL, uri);
         curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, remotedb_curl);
         curl_easy_setopt(curl, CURLOPT_WRITEDATA, request);
@@ -166,7 +166,7 @@ remotedb_authorize(void *instance, REQUEST *request)
         return RLM_MODULE_OK;
     }
 
-    radlog(L_ERR, "Failed to call %s, retry in few seconds with CURLcode %d\n", uri, res);
+    radlog(L_ERR, "Failed to call %s (CURL error code : %d)\n", uri, res);
     if (res == CURLE_COULDNT_CONNECT || res == CURLE_OPERATION_TIMEDOUT) {
         radlog(L_ERR, "Couldnt connect to the server or operation timeout");
     }
