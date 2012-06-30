@@ -35,12 +35,14 @@ typedef struct rlm_remotedb_t {
     char    *ip;
     int    port;
     char    *base;
+    int    timeout;
 } rlm_remotedb_t;
 
 static const CONF_PARSER module_config[] = {
   { "port", PW_TYPE_INTEGER,    offsetof(rlm_remotedb_t, port), NULL,   "80" },
   { "ip",  PW_TYPE_STRING_PTR, offsetof(rlm_remotedb_t, ip), NULL,  "127.0.0.1"},
   { "base",  PW_TYPE_STRING_PTR, offsetof(rlm_remotedb_t, base), NULL,  ""},
+  { "timeout",  PW_TYPE_INTEGER, offsetof(rlm_remotedb_t, timeout), NULL,  "1"},
 
   { NULL, -1, 0, NULL, NULL }
 };
@@ -158,8 +160,8 @@ remotedb_authorize(void *instance, REQUEST *request)
         curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, remotedb_curl);
         curl_easy_setopt(curl, CURLOPT_WRITEDATA, request);
 
-        curl_easy_setopt(curl, CURLOPT_TIMEOUT, 1);
-        curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, 1);
+        curl_easy_setopt(curl, CURLOPT_TIMEOUT, data->timeout);
+        curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, data->timeout);
 
         res = curl_easy_perform(curl);
         curl_easy_cleanup(curl);
