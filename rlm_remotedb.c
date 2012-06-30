@@ -68,7 +68,7 @@ remotedb_instantiate(CONF_SECTION *conf, void **instance)
     return 0;
 }
 
-static int
+static void
 remotedb_answer_builder(REQUEST *request, const char *password, const char *vlan)
 {
     VALUE_PAIR *pair;
@@ -87,46 +87,41 @@ remotedb_answer_builder(REQUEST *request, const char *password, const char *vlan
 
     pair = pairmake("Tunnel-Type", "13", T_OP_SET);
     pairadd(&request->reply->vps, pair);
-
-    return RLM_MODULE_OK;
 }
 
 static size_t
 remotedb_curl( void *ptr, size_t size, size_t nmemb, void *userdata)
 {
+    struct json_object *jvlan;
+    struct json_object *jpassword;
+    
     REQUEST *request = (REQUEST *) userdata;
 
     json_object * jobj = json_tokener_parse(ptr);
 
     if ((int) jobj < 0) {
         radlog(L_ERR, "Invalid json\n");
-        json_object_put(jobj);
-        return nmemb * size;
+        goto out;
     }
-
-    struct json_object *jvlan;
-    struct json_object *jpassword;
 
     if (json_object_get_type(jobj) != json_type_object) {
         radlog(L_ERR, "Wrong type in field\n");
-        json_object_put(jobj);
-        return nmemb * size;
+        goto out;
     }
 
     if ((jvlan = json_object_object_get(jobj, "vlan")) == NULL) {
         radlog(L_ERR, "vlan field needed\n");
-        json_object_put(jobj);
-        return nmemb * size;
+        goto out;
     }
 
     if ((jpassword = json_object_object_get(jobj, "password")) == NULL) {
         radlog(L_ERR, "password field needed\n");
-        json_object_put(jobj);
-        return nmemb * size;
+        goto out;
     }
 
     remotedb_answer_builder(request, json_object_get_string(jpassword), json_object_get_string(jvlan));
 
+out:
     json_object_put(jobj);
     return nmemb * size;
 }
