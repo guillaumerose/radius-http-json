@@ -5,6 +5,8 @@ h2. How it works ?
 An experiment with FreeRADIUS. For each request, radius makes a HTTP GET on a webserver which answers a bit of json.
 With this backend, you are free in your choice of database. You don't have to change bind code, just write a little webserver.
 
+Maintainers of FreeRADIUS rewrote this with a better support. The module is called rlm_rest.
+
 bc.. require 'rubygems'
 require 'sinatra'
 
